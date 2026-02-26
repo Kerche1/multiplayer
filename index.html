@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>🌐 Multi-Control - Общий экран + управление</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="https://webrtc.github.io/adapter/adapter-latest.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: Arial; background: #1a1a1a; color: white; height: 100vh; overflow: hidden; }
+    #main { display: flex; height: 100vh; }
+    #screen { flex: 1; position: relative; background: #000; max-width: 75%; }
+    #sidebar { width: 25%; background: #2a2a2a; padding: 15px; overflow-y: auto; }
+    #controls { margin-bottom: 15px; background: #3a3a3a; padding: 15px; border-radius: 8px; }
+    input, button, select { padding: 8px; margin: 3px; border: none; border-radius: 4px; }
+    button { background: #007bff; color: white; cursor: pointer; }
+    button:hover { background: #0056b3; }
+    button:disabled { background: #555; cursor: not-allowed; }
+    #screenVideo { width: 100%; height: 100%; object-fit: contain; }
+    .cursor { position: absolute; pointer-events: none; z-index: 100; transition: all 0.05s; }
+    .cursor::after { content: attr(data-user); position: absolute; font-size: 10px; background: rgba(0,0,0,0.8); padding: 2px 4px; border-radius: 3px; top: -25px; left: 50%; transform: translateX(-50%); }
+    #chat { height: 200px; background: #3a3a3a; border-radius: 8px; padding: 10px; overflow-y: auto; margin: 10px 0; }
+    .chat-msg { margin: 5px 0; opacity: 0.9; }
+    #status { padding: 10px; background: #444; border-radius: 5px; margin-bottom: 10px; text-align: center; }
+    @media (max-width: 768px) { #sidebar { width: 100%; position: fixed; bottom: 0; max-height: 40vh; } #screen { max-width: 100%; } }
+  </style>
+</head>
+<body>
+  <div id="main">
+    <div id="screen">
+      <video id="screenVideo" autoplay muted playsinline></video>
+      <canvas id="cursorCanvas" style="position:absolute;top:0;left:0;pointer-events:none;"></canvas>
+    </div>
+    <div id="sidebar">
+      <div id="status">⏳ Подключение...</div>
+      <div id="controls">
+        <div>📱 Комната: <input id="roomId" value="room1" maxlength="20"></div>
+        <label><input type="radio" name="role" value="host" checked> 🖥️ Хост (делюсь экраном)</label>
+        <label><input type="radio" name="role" value="client"> 👤 Клиент (управляю)</label>
+        <br>
+        <button onclick="joinRoom()" id="joinBtn">🚀 Подключиться</button>
+        <button onclick="toggleScreen()" id="screenBtn" disabled>📺 Начать трансляцию</button>
+      </div>
+      
+      <div>👥 <span id="userCount">0</span> участников | 🎨 <span id="myColor">-</span></div>
+      <div id="chatContainer">
+        <div>💬 Чат</div>
+        <div id="chat"></div>
+        <input id="chatInput" placeholder="Сообщение..." onkeypress="if(event.key==='Enter')sendChat()">
+        <button onclick="sendChat()">📤</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const socket = io();
+    const screenVideo = document.getElementById('screenVideo');
+    const cursorCanvas = document.getElementById('cursorCanvas');
+    const ctx = cursorCanvas.getContext('2d');
+    let roomId = 'room1', isHost = true, myColor = '#ff4444', screenStream = null;
+    let isConnected = false, hostId = null;
+
+    // Инициализация canvas для курсоров
+    function resizeCanvas() {
+      cursorCanvas.width = screenVideo.offsetWidth;
+      cursorCanvas.height = screenVideo.offsetHeight;
+    }
+    window.addEventListener('resize', resizeCanvas);
+
+    // Подключение к комнате
+    function joinRoom() {
+      roomId = document.getElementById('roomId').value;
+      isHost = document.querySelector('input[name="role"]:checked').value === 'host';
+      socket.emit('join-room', { roomId, isHost });
+      document.getElementById('status').textContent = `⏳ Подключение к ${roomId}...`;
+    }
+
+    // Трансляция экрана (только хост)
+    async function toggleScreen() {
+      if (screenStream) {
+        screenStream.getTracks().forEach(track => track.stop());
+        screenStream = null;
+        document.getElementById('screenBtn').textContent = '📺 Начать трансляцию';
+        return;
+      }
+
+      try {
+        screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+        screenVideo.srcObject = screenStream;
+        socket.emit('screen-stream', { roomId, stream: true });
+        document.getElementById('screenBtn').textContent = '🛑 Остановить';
+      } catch(err) {
+        alert('Ошибка захвата экрана: ' + err.message);
+      }
+    }
+
+    // Отправка ввода (клики, движение)
+    function sendInput(type, x, y) {
+      if (!isConnected || !hostId) return;
+      const rect = screenVideo.getBoundingClientRect();
+      socket.emit('remote-input', {
+        hostId, roomId,
+        type, x: x/rect.width, y: y/rect.height
+      });
+    }
+
+    // Отправка позиции курсора
+    function sendCursor(x, y) {
+      socket.emit('cursor-move', { roomId, x, y });
+    }
+
+    // Выполнение удаленного ввода (только хост)
+    function executeInput(input) {
+      const rect = screenVideo.getBoundingClientRect();
+      const realX = input.x * screen.width;
+      const realY = input.y * screen.height;
+      
+      if (input.type === 'click') {
+        const event = new MouseEvent('click', { 
+          clientX: realX, clientY: realY, bubbles: true 
+        });
+        document.elementFromPoint(realX, realY)?.dispatchEvent(event);
+      }
+    }
+
+    // Socket события
+    socket.on('user-joined', (data) => {
+      isConnected = true;
+      hostId = data.hostId;
+      document.getElementById('userCount').textContent = data.users;
+      document.getElementById('status').innerHTML = `✅ <strong>${roomId}</strong> | Хост: ${data.hostId.slice(-4)}`;
+      
+      if (isHost) {
+        document.getElementById('screenBtn').disabled = false;
+        document.getElementById('myColor').textContent = myColor;
+      }
+    });
+
+    socket.on('screen-stream', () => {
+      document.getElementById('status').textContent += ' 📺 Получен стрим экрана';
+    });
+
+    socket.on('execute-input', executeInput);
+    socket.on('remote-cursor', (data) => drawCursor(data));
+    socket.on('chat-message', (data) => addChat(data.message));
+    socket.on('user-left', (data) => document.getElementById('userCount').textContent = data.users);
+
+    // События мыши/тач для клиентов
+    ['mousemove', 'touchmove'].forEach(ev => {
+      screenVideo.addEventListener(ev, (e) => {
+        e.preventDefault();
+        const rect = screenVideo.getBoundingClientRect();
+        const x = (e.clientX || e.touches[0].clientX) - rect.left;
+        const y = (e.clientY || e.touches[0].clientY) - rect.top;
+        sendCursor(x, y);
+      }, { passive: false });
+    });
+
+    screenVideo.addEventListener('click', (e) => !isHost && sendInput('click', e.clientX, e.clientY));
+    screenVideo.addEventListener('touchstart', (e) => {
+      e.preventDefault();
+      const rect = screenVideo.getBoundingClientRect();
+      sendInput('click', e.touches[0].clientX, e.touches[0].clientY);
+    }, { passive: false });
+
+    function drawCursor(data) {
+      ctx.clearRect(0, 0, cursorCanvas.width, cursorCanvas.height);
+      ctx.fillStyle = data.color;
+      ctx.beginPath();
+      ctx.arc(data.x, data.y, 10, 0, Math.PI*2);
+      ctx.fill();
+      ctx.fillStyle = 'white';
+      ctx.font = '12px Arial';
+      ctx.textAlign = 'center';
+      ctx.fillText(data.userId, data.x, data.y - 15);
+      ctx.textAlign = 'left';
+    }
+
+    function sendChat() {
+      const msg = document.getElementById('chatInput').value.trim();
+      if (msg) socket.emit('chat-message', { roomId, message: `${myColor.slice(1).toUpperCase()}: ${msg}` });
+    }
+
+    function addChat(msg) {
+      const chat = document.getElementById('chat');
+      chat.innerHTML += `<div class="chat-msg">${msg}</div>`;
+      chat.scrollTop = chat.scrollHeight;
+    }
+
+    // Авторесайз
+    window.addEventListener('resize', () => { resizeCanvas(); screenVideo.style.height = '100%'; });
+  </script>
+</body>
+</html>
