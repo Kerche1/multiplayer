@@ -5,55 +5,69 @@ const path = require('path');
 
 const app = express();
 const server = http.createServer(app);
-const io = socketIo(server, { cors: { origin: '*' } });
+const io = socketIo(server, { 
+  cors: { 
+    origin: "*", 
+    methods: ["GET", "POST"]
+  }
+});
 
 app.use(express.static(path.join(__dirname)));
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 
 const rooms = {};
-const peers = {};
 
 io.on('connection', (socket) => {
-  console.log('👤', socket.id);
-
-  // WebRTC Signaling
+  console.log('✅ Пользователь подключился:', socket.id);
+  
   socket.on('join-room', (data) => {
-    const { roomId, userData } = data;
-    if (!rooms[roomId]) rooms[roomId] = { users: [], hostId: null };
+    const { roomId } = data;
+    if (!rooms[roomId]) rooms[roomId] = { users: [] };
     
     socket.join(roomId);
     socket.roomId = roomId;
-    socket.userData = userData;
-    socket.color = ['#ff4444', '#44ff44', '#4444ff', '#ff44ff', '#44ffff'][rooms[roomId].users.length];
     
     rooms[roomId].users.push(socket.id);
+    
+    // Сообщить всем в комнате
     io.to(roomId).emit('user-joined', { 
-      userId: socket.id, 
-      color: socket.color, 
+      userId: socket.id.slice(-4),
+      color: ['#ff4444', '#44ff44', '#4444ff', '#ff44ff'][rooms[roomId].users.length % 4],
       users: rooms[roomId].users.length 
     });
     
-    // Отправить список пиров новым участникам
-    socket.emit('all-users', rooms[roomId].users.filter(id => id !== socket.id));
+    console.log(`👥 Комната ${roomId}: ${rooms[roomId].users.length} пользователей`);
   });
 
-  // WebRTC signaling
-  socket.on('offer', (data) => socket.to(data.target).emit('offer', { offer: data.offer, sender: socket.id }));
-  socket.on('answer', (data) => socket.to(data.target).emit('answer', { answer: data.answer, sender: socket.id }));
-  socket.on('ice-candidate', (data) => socket.to(data.target).emit('ice-candidate', { candidate: data.candidate, sender: socket.id }));
+  // Простая имитация трансляции экрана (черный фон + курсоры пока)
+  socket.on('screen-update', (data) => {
+    socket.to(data.roomId).emit('screen-update', data);
+  });
 
-  // Управление + курсоры
-  socket.on('remote-input', (data) => socket.to(data.targetId).emit('execute-input', data));
-  socket.on('cursor-move', (data) => socket.to(data.roomId).emit('remote-cursor', data));
+  // Управление и курсоры
+  socket.on('remote-input', (data) => {
+    socket.to(data.roomId).emit('execute-input', data);
+  });
   
+  socket.on('cursor-move', (data) => {
+    socket.to(data.roomId).emit('remote-cursor', data);
+  });
+  
+  socket.on('chat-message', (data) => {
+    io.to(data.roomId).emit('chat-message', data);
+  });
+
   socket.on('disconnect', () => {
+    console.log('❌', socket.id, 'отключился');
     if (socket.roomId && rooms[socket.roomId]) {
       rooms[socket.roomId].users = rooms[socket.roomId].users.filter(id => id !== socket.id);
-      io.to(socket.roomId).emit('user-disconnected', socket.id);
+      io.to(socket.roomId).emit('user-left', { users: rooms[socket.roomId].users.length });
     }
   });
 });
 
-server.listen(process.env.PORT || 3000, () => {
-  console.log('🚀 Сервер:', `http://localhost:${process.env.PORT || 3000}`);
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, '0.0.0.0', () => {
+  console.log(`🚀 Сервер запущен: http://localhost:${PORT}`);
+  console.log('📱 С телефона: http://[твой_IP]:${PORT}');
 });
