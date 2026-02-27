@@ -2,55 +2,54 @@ const express = require('express');
 const http = require('http');
 const socketIo = require('socket.io');
 const path = require('path');
+
 const app = express();
 const server = http.createServer(app);
-const io = socketIo(server, { 
-  cors: { origin: '*' },
-  pingTimeout: 60000
-});
+const io = socketIo(server, { cors: { origin: '*' } });
 
 app.use(express.static(path.join(__dirname)));
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 
-const rooms = {}; // { roomId: { users: [], hostId: null } }
+const rooms = {};
+const peers = {};
 
 io.on('connection', (socket) => {
-  console.log('👤 Пользователь подключился:', socket.id);
+  console.log('👤', socket.id);
 
+  // WebRTC Signaling
   socket.on('join-room', (data) => {
-    const { roomId, isHost } = data;
+    const { roomId, userData } = data;
     if (!rooms[roomId]) rooms[roomId] = { users: [], hostId: null };
     
     socket.join(roomId);
-    socket.userId = socket.id.slice(-4);
     socket.roomId = roomId;
-    socket.isHost = isHost;
-    socket.color = ['#ff4444', '#44ff44', '#4444ff', '#ff44ff', '#44ffff'][rooms[roomId].users.length % 5];
+    socket.userData = userData;
+    socket.color = ['#ff4444', '#44ff44', '#4444ff', '#ff44ff', '#44ffff'][rooms[roomId].users.length];
     
     rooms[roomId].users.push(socket.id);
-    if (isHost && !rooms[roomId].hostId) rooms[roomId].hostId = socket.id;
-    
-    // Уведомить всех
     io.to(roomId).emit('user-joined', { 
-      userId: socket.userId, 
+      userId: socket.id, 
       color: socket.color, 
-      users: rooms[roomId].users.length,
-      hostId: rooms[roomId].hostId 
+      users: rooms[roomId].users.length 
     });
+    
+    // Отправить список пиров новым участникам
+    socket.emit('all-users', rooms[roomId].users.filter(id => id !== socket.id));
   });
 
-  socket.on('screen-stream', (data) => socket.to(data.roomId).emit('screen-stream', data));
-  socket.on('remote-input', (data) => socket.to(data.hostId).emit('execute-input', data));
+  // WebRTC signaling
+  socket.on('offer', (data) => socket.to(data.target).emit('offer', { offer: data.offer, sender: socket.id }));
+  socket.on('answer', (data) => socket.to(data.target).emit('answer', { answer: data.answer, sender: socket.id }));
+  socket.on('ice-candidate', (data) => socket.to(data.target).emit('ice-candidate', { candidate: data.candidate, sender: socket.id }));
+
+  // Управление + курсоры
+  socket.on('remote-input', (data) => socket.to(data.targetId).emit('execute-input', data));
   socket.on('cursor-move', (data) => socket.to(data.roomId).emit('remote-cursor', data));
-  socket.on('chat-message', (data) => {
-    socket.to(data.roomId).emit('chat-message', data);
-    socket.emit('chat-message', data);
-  });
-
+  
   socket.on('disconnect', () => {
     if (socket.roomId && rooms[socket.roomId]) {
       rooms[socket.roomId].users = rooms[socket.roomId].users.filter(id => id !== socket.id);
-      io.to(socket.roomId).emit('user-left', { users: rooms[socket.roomId].users.length });
+      io.to(socket.roomId).emit('user-disconnected', socket.id);
     }
   });
 });
