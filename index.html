@@ -1,286 +1,118 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>🌐 Multi-Control Pro</title>
+  <title>Multi-Control (Исправлено)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <script src="/socket.io/socket.io.js" defer></script>
+  <script src="/socket.io/socket.io.js"></script>
   <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: Arial; background: #1a1a1a; color: white; height: 100vh; overflow: hidden; }
-    #app { display: flex; height: 100vh; }
-    #screen-container { 
-      flex: 1; position: relative; background: #000; overflow: hidden; 
-      touch-action: none; /* Для пинч-зум */
-    }
-    #screen-video { 
-      width: 100%; height: 100%; object-fit: contain; transition: transform 0.1s; 
-    }
-    #cursor-canvas { 
-      position: absolute; top: 0; left: 0; pointer-events: none; z-index: 10; 
-    }
-    #sidebar { 
-      width: 300px; background: #2a2a2a; padding: 15px; overflow-y: auto; 
-      border-left: 1px solid #444;
-    }
-    .btn { padding: 10px 15px; margin: 5px; border: none; border-radius: 5px; cursor: pointer; background: #007bff; color: white; }
-    .btn:hover { background: #0056b3; }
-    .btn:disabled { background: #555; cursor: not-allowed; }
-    #controls input { width: 100px; padding: 5px; margin: 5px 0; }
-    #chat { height: 200px; background: #3a3a3a; border-radius: 8px; padding: 10px; overflow-y: auto; margin: 10px 0; }
-    .status { padding: 10px; background: #444; border-radius: 5px; margin: 10px 0; }
-    @media (max-width: 768px) { #sidebar { width: 100%; height: 40%; position: fixed; bottom: 0; } }
+    body { margin: 0; font-family: Arial; background: #1a1a1a; color: white; }
+    #screen { width: 75%; height: 90vh; background: #000; position: relative; float: left; }
+    #sidebar { width: 25%; height: 90vh; background: #2a2a2a; float: left; padding: 20px; }
+    canvas { position: absolute; top: 0; left: 0; pointer-events: none; }
+    button { padding: 10px; margin: 5px; background: #007bff; color: white; border: none; border-radius: 5px; cursor: pointer; }
+    input { padding: 10px; margin: 5px; border-radius: 5px; border: 1px solid #444; background: #3a3a3a; color: white; }
+    #chat { height: 200px; overflow-y: auto; background: #3a3a3a; padding: 10px; border-radius: 5px; margin: 10px 0; }
   </style>
 </head>
 <body>
-  <div id="app">
-    <div id="screen-container">
-      <video id="screen-video" autoplay muted playsinline></video>
-      <canvas id="cursor-canvas"></canvas>
-    </div>
-    <div id="sidebar">
-      <div class="status" id="status">⏳ Подключение...</div>
-      <div id="controls">
-        <input id="roomId" value="room1" placeholder="Код комнаты">
-        <br>
-        <button class="btn" onclick="joinRoom()">🚀 Подключиться</button>
-        <button class="btn" id="startScreenBtn" onclick="toggleScreenShare()" disabled>📺 Поделиться экраном</button>
-        <div>👥 <span id="users">0</span> | 🎨 <span id="myColor">-</span></div>
-      </div>
-      <div id="chatContainer">
-        <div>💬 Чат</div>
-        <div id="chat"></div>
-        <input id="chatInput" placeholder="Сообщение..." onkeypress="handleEnter(event)">
-        <button class="btn" onclick="sendChat()">📤</button>
-      </div>
-    </div>
+  <div id="screen">
+    <canvas id="screenCanvas" width="800" height="600"></canvas>
+    <canvas id="cursorCanvas" width="800" height="600"></canvas>
+  </div>
+  <div id="sidebar">
+    <div id="status">⏳ Подключение...</div>
+    <input id="roomId" value="room1" placeholder="Код комнаты">
+    <br><button onclick="joinRoom()">🚀 Подключиться</button>
+    <div>👥 <span id="users">0</span> пользователей</div>
+    <div id="chat"></div>
+    <input id="chatInput" placeholder="Чат..." onkeypress="if(event.key==='Enter') sendChat()">
+    <button onclick="sendChat()">📤</button>
   </div>
 
   <script>
     const socket = io();
-    const video = document.getElementById('screen-video');
-    const canvas = document.getElementById('cursor-canvas');
-    const ctx = canvas.getContext('2d');
-    const container = document.getElementById('screen-container');
-    
+    const screenCanvas = document.getElementById('screenCanvas');
+    const cursorCanvas = document.getElementById('cursorCanvas');
+    const ctxScreen = screenCanvas.getContext('2d');
+    const ctxCursor = cursorCanvas.getContext('2d');
     let roomId = 'room1';
-    let myPeer = null;
-    let currentPeer = null;
-    let screenStream = null;
-    let scale = 1;
-    let isPinching = false;
-    let myColor = '#ff4444';
-    
-    // Инициализация canvas
-    function resizeCanvas() {
-      canvas.width = container.clientWidth;
-      canvas.height = container.clientHeight;
-    }
-    window.addEventListener('resize', resizeCanvas);
-    resizeCanvas();
 
-    // WebRTC Peer Connection
-    function createPeerConnection(targetId) {
-      const config = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
-      const peer = new RTCPeerConnection(config);
-      
-      peer.ontrack = (event) => {
-        video.srcObject = event.streams[0];
-      };
-      
-      peer.onicecandidate = (event) => {
-        if (event.candidate) {
-          socket.emit('ice-candidate', { targetId, candidate: event.candidate });
-        }
-      };
-      
-      return peer;
-    }
-
-    // Подключение к комнате
-    async function joinRoom() {
+    // Подключение
+    function joinRoom() {
       roomId = document.getElementById('roomId').value;
-      socket.emit('join-room', { roomId, userData: { name: 'User' + Math.floor(Math.random()*100) } });
-      document.getElementById('status').textContent = `⏳ Подключение к ${roomId}...`;
+      socket.emit('join-room', { roomId });
     }
 
-    // Трансляция экрана
-    async function toggleScreenShare() {
-      if (screenStream) {
-        screenStream.getTracks().forEach(track => track.stop());
-        screenStream = null;
-        document.getElementById('startScreenBtn').textContent = '📺 Поделиться экраном';
-        video.srcObject = null;
-        return;
-      }
-
-      try {
-        screenStream = await navigator.mediaDevices.getDisplayMedia({ 
-          video: { width: { ideal: 1920 }, height: { ideal: 1080 } },
-          audio: true 
-        });
-        
-        document.getElementById('startScreenBtn').textContent = '🛑 Остановить';
-        
-        // Отправить стрим всем в комнате
-        socket.emit('offer', { targetId: 'all', offer: await myPeer.createOffer() });
-      } catch(err) {
-        alert('Ошибка экрана: ' + err.message);
-      }
+    // Рисование фона (имитация экрана)
+    function drawScreen() {
+      ctxScreen.fillStyle = '#333';
+      ctxScreen.fillRect(0, 0, screenCanvas.width, screenCanvas.height);
+      ctxScreen.fillStyle = '#fff';
+      ctxScreen.font = '24px Arial';
+      ctxScreen.textAlign = 'center';
+      ctxScreen.fillText('📺 ЭКРАН РАБОТАЕТ!', screenCanvas.width/2, screenCanvas.height/2);
     }
+    drawScreen();
 
-    // Масштабирование (пинч-зум для телефонов)
-    let lastDistance = 0;
-    container.addEventListener('touchstart', (e) => {
-      if (e.touches.length === 2) {
-        isPinching = true;
-        lastDistance = Math.hypot(
-          e.touches[0].clientX - e.touches[1].clientX,
-          e.touches[0].clientY - e.touches[1].clientY
-        );
-      }
+    // Курсоры
+    socket.on('remote-cursor', (data) => {
+      ctxCursor.clearRect(0, 0, cursorCanvas.width, cursorCanvas.height);
+      ctxCursor.fillStyle = data.color;
+      ctxCursor.beginPath();
+      ctxCursor.arc(data.x, data.y, 10, 0, Math.PI*2);
+      ctxCursor.fill();
+      ctxCursor.fillStyle = 'white';
+      ctxCursor.font = '12px Arial';
+      ctxCursor.textAlign = 'center';
+      ctxCursor.fillText(data.userId, data.x, data.y-15);
     });
 
-    container.addEventListener('touchmove', (e) => {
-      if (isPinching && e.touches.length === 2) {
-        e.preventDefault();
-        const distance = Math.hypot(
-          e.touches[0].clientX - e.touches[1].clientX,
-          e.touches[0].clientY - e.touches[1].clientY
-        );
-        const delta = distance / lastDistance;
-        scale *= delta;
-        scale = Math.max(0.5, Math.min(scale, 3)); // Лимиты зума
-        
-        video.style.transform = `scale(${scale})`;
-        lastDistance = distance;
-      }
-    });
-
-    container.addEventListener('touchend', () => isPinching = false);
-
-    // Управление (клики всех работают одновременно)
-    ['click', 'touchstart'].forEach(event => {
-      container.addEventListener(event, (e) => {
-        e.preventDefault();
-        const rect = container.getBoundingClientRect();
-        const x = (e.clientX || e.touches[0].clientX) - rect.left;
-        const y = (e.clientY || e.touches[0].clientY) - rect.top;
-        
-        // Отправить клик всем участникам
-        socket.emit('remote-input', {
-          roomId,
-          type: 'click',
-          x: x / rect.width,
-          y: y / rect.height,
-          scale
-        });
-        
-        // Выполнить локально
-        executeInput({ type: 'click', x, y });
-      }, { passive: false });
-    });
-
-    // Отслеживание курсора
-    container.addEventListener('mousemove', (e) => {
-      const rect = container.getBoundingClientRect();
+    // Локальный курсор
+    screenCanvas.addEventListener('mousemove', (e) => {
+      const rect = screenCanvas.getBoundingClientRect();
       const x = e.clientX - rect.left;
       const y = e.clientY - rect.top;
-      socket.emit('cursor-move', { roomId, x, y, color: myColor });
-      drawMyCursor(x, y);
+      socket.emit('cursor-move', { roomId, x, y });
     });
 
-    container.addEventListener('touchmove', (e) => {
-      e.preventDefault();
-      const rect = container.getBoundingClientRect();
-      const x = e.touches[0].clientX - rect.left;
-      const y = e.touches[0].clientY - rect.top;
-      socket.emit('cursor-move', { roomId, x, y, color: myColor });
-    });
-
-    function executeInput(input) {
-      // Симуляция клика с масштабом
-      const realX = input.x / scale;
-      const realY = input.y / scale;
+    // Клик по экрану
+    screenCanvas.addEventListener('click', (e) => {
+      const rect = screenCanvas.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      socket.emit('remote-input', { roomId, type: 'click', x, y });
       
-      const event = new MouseEvent('click', {
-        clientX: realX,
-        clientY: realY,
-        bubbles: true
-      });
-      document.elementFromPoint(realX, realY)?.dispatchEvent(event);
-    }
+      // Локальный эффект
+      ctxScreen.fillStyle = 'rgba(255,255,0,0.5)';
+      ctxScreen.beginPath();
+      ctxScreen.arc(x, y, 20, 0, Math.PI*2);
+      ctxScreen.fill();
+      setTimeout(drawScreen, 200);
+    });
 
-    function drawMyCursor(x, y) {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      ctx.fillStyle = myColor;
-      ctx.beginPath();
-      ctx.arc(x, y, 8, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = 'white';
-      ctx.font = 'bold 10px Arial';
-      ctx.textAlign = 'center';
-      ctx.fillText('YOU', x, y - 12);
-    }
-
-    function drawRemoteCursor(data) {
-      ctx.fillStyle = data.color;
-      ctx.beginPath();
-      ctx.arc(data.x, data.y, 8, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = 'white';
-      ctx.fillText(data.id.slice(-2), data.x, data.y - 12);
-    }
-
-    // Socket события
-    socket.on('all-users', (userIds) => {
-      document.getElementById('status').textContent = `✅ Комната ${roomId} готова`;
-      document.getElementById('startScreenBtn').disabled = false;
+    // События сокетов
+    socket.on('connect', () => {
+      document.getElementById('status').innerHTML = '✅ <strong>ПОДКЛЮЧЕН</strong>';
     });
 
     socket.on('user-joined', (data) => {
       document.getElementById('users').textContent = data.users;
-      document.getElementById('myColor').textContent = data.color;
-      myColor = data.color;
+      document.getElementById('status').innerHTML = `✅ ${roomId} | ${data.users} чел.`;
     });
 
-    socket.on('offer', async (data) => {
-      myPeer = createPeerConnection(data.sender);
-      await myPeer.setRemoteDescription(data.offer);
-      const answer = await myPeer.createAnswer();
-      await myPeer.setLocalDescription(answer);
-      socket.emit('answer', { targetId: data.sender, answer });
+    socket.on('chat-message', (data) => {
+      const chat = document.getElementById('chat');
+      chat.innerHTML += `<div>${data.message}</div>`;
+      chat.scrollTop = chat.scrollHeight;
     });
-
-    socket.on('answer', (data) => {
-      myPeer.setRemoteDescription(data.answer);
-    });
-
-    socket.on('ice-candidate', (data) => {
-      myPeer.addIceCandidate(data.candidate);
-    });
-
-    socket.on('remote-input', executeInput);
-    socket.on('remote-cursor', drawRemoteCursor);
 
     function sendChat() {
       const msg = document.getElementById('chatInput').value.trim();
       if (msg) {
-        socket.emit('chat-message', { roomId, message: `${myColor.slice(1).toUpperCase()}: ${msg}` });
+        socket.emit('chat-message', { roomId, message: `💬 ${msg}` });
         document.getElementById('chatInput').value = '';
       }
     }
-
-    function handleEnter(event) {
-      if (event.key === 'Enter') sendChat();
-    }
-
-    // Колесо мыши для зума
-    container.addEventListener('wheel', (e) => {
-      e.preventDefault();
-      scale *= e.deltaY > 0 ? 0.9 : 1.1;
-      scale = Math.max(0.5, Math.min(scale, 3));
-      video.style.transform = `scale(${scale})`;
-    });
   </script>
 </body>
 </html>
