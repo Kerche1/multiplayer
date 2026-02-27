@@ -1,32 +1,39 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Multi-Control (Исправлено)</title>
+  <title>ScreenShare Control</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <script src="/socket.io/socket.io.js"></script>
   <style>
-    body { margin: 0; font-family: Arial; background: #1a1a1a; color: white; }
-    #screen { width: 75%; height: 90vh; background: #000; position: relative; float: left; }
-    #sidebar { width: 25%; height: 90vh; background: #2a2a2a; float: left; padding: 20px; }
-    canvas { position: absolute; top: 0; left: 0; pointer-events: none; }
-    button { padding: 10px; margin: 5px; background: #007bff; color: white; border: none; border-radius: 5px; cursor: pointer; }
-    input { padding: 10px; margin: 5px; border-radius: 5px; border: 1px solid #444; background: #3a3a3a; color: white; }
-    #chat { height: 200px; overflow-y: auto; background: #3a3a3a; padding: 10px; border-radius: 5px; margin: 10px 0; }
+    body { margin: 0; font-family: Arial; background: #222; color: white; }
+    #container { display: flex; height: 100vh; }
+    #screen { flex: 1; position: relative; background: #000; }
+    #sidebar { width: 300px; background: #333; padding: 20px; }
+    #screenCanvas, #cursorCanvas { position: absolute; top: 0; left: 0; }
+    button { width: 100%; padding: 12px; margin: 5px 0; background: #007bff; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 16px; }
+    button:hover { background: #0056b3; }
+    button:disabled { background: #666; cursor: not-allowed; }
+    input { width: 100%; padding: 12px; margin: 5px 0; box-sizing: border-box; border: 1px solid #555; border-radius: 5px; background: #444; color: white; }
+    #status { padding: 10px; background: #444; border-radius: 5px; margin: 10px 0; text-align: center; }
+    .host-mode { border: 2px solid #00ff00; }
+    .viewer-mode { border: 2px solid #ffaa00; }
   </style>
 </head>
 <body>
-  <div id="screen">
-    <canvas id="screenCanvas" width="800" height="600"></canvas>
-    <canvas id="cursorCanvas" width="800" height="600"></canvas>
-  </div>
-  <div id="sidebar">
-    <div id="status">⏳ Подключение...</div>
-    <input id="roomId" value="room1" placeholder="Код комнаты">
-    <br><button onclick="joinRoom()">🚀 Подключиться</button>
-    <div>👥 <span id="users">0</span> пользователей</div>
-    <div id="chat"></div>
-    <input id="chatInput" placeholder="Чат..." onkeypress="if(event.key==='Enter') sendChat()">
-    <button onclick="sendChat()">📤</button>
+  <div id="container">
+    <div id="screen">
+      <canvas id="screenCanvas"></canvas>
+      <canvas id="cursorCanvas"></canvas>
+    </div>
+    <div id="sidebar">
+      <div id="status">Готов к работе</div>
+      <input id="roomId" value="room1" placeholder="ID комнаты">
+      <button onclick="startHost()">🖥️ Стать Хостом</button>
+      <button onclick="joinViewer()" id="joinBtn" disabled>👁️ Подключиться как зритель</button>
+      <hr>
+      <div>👥 Зрителей: <span id="viewerCount">0</span></div>
+      <button onclick="captureScreen()" id="captureBtn" disabled>📸 Обновить экран</button>
+    </div>
   </div>
 
   <script>
@@ -35,84 +42,130 @@
     const cursorCanvas = document.getElementById('cursorCanvas');
     const ctxScreen = screenCanvas.getContext('2d');
     const ctxCursor = cursorCanvas.getContext('2d');
-    let roomId = 'room1';
+    
+    let isHost = false;
+    let roomId = '';
+    let viewers = 0;
 
-    // Подключение
-    function joinRoom() {
+    // Адаптация canvas
+    function resizeCanvas() {
+      const rect = screenCanvas.getBoundingClientRect();
+      screenCanvas.width = rect.width;
+      screenCanvas.height = rect.height;
+      cursorCanvas.width = rect.width;
+      cursorCanvas.height = rect.height;
+    }
+    window.addEventListener('resize', resizeCanvas);
+    resizeCanvas();
+
+    // Режим ХОСТА
+    function startHost() {
       roomId = document.getElementById('roomId').value;
-      socket.emit('join-room', { roomId });
+      socket.emit('register-host', roomId);
+      isHost = true;
+      document.getElementById('status').innerHTML = `🖥️ ХОСТ: <strong>${roomId}</strong>`;
+      document.getElementById('joinBtn').disabled = true;
+      document.getElementById('captureBtn').disabled = false;
+      screenCanvas.parentElement.classList.add('host-mode');
     }
 
-    // Рисование фона (имитация экрана)
-    function drawScreen() {
-      ctxScreen.fillStyle = '#333';
-      ctxScreen.fillRect(0, 0, screenCanvas.width, screenCanvas.height);
-      ctxScreen.fillStyle = '#fff';
-      ctxScreen.font = '24px Arial';
-      ctxScreen.textAlign = 'center';
-      ctxScreen.fillText('📺 ЭКРАН РАБОТАЕТ!', screenCanvas.width/2, screenCanvas.height/2);
+    // Режим ЗРИТЕЛЯ
+    function joinViewer() {
+      roomId = document.getElementById('roomId').value;
+      socket.emit('join-viewer', roomId);
+      document.getElementById('status').innerHTML = `👁️ ЗРИТЕЛЬ: <strong>${roomId}</strong>`;
+      document.getElementById('captureBtn').style.display = 'none';
+      screenCanvas.parentElement.classList.add('viewer-mode');
     }
-    drawScreen();
 
-    // Курсоры
-    socket.on('remote-cursor', (data) => {
-      ctxCursor.clearRect(0, 0, cursorCanvas.width, cursorCanvas.height);
-      ctxCursor.fillStyle = data.color;
-      ctxCursor.beginPath();
-      ctxCursor.arc(data.x, data.y, 10, 0, Math.PI*2);
-      ctxCursor.fill();
-      ctxCursor.fillStyle = 'white';
-      ctxCursor.font = '12px Arial';
-      ctxCursor.textAlign = 'center';
-      ctxCursor.fillText(data.userId, data.x, data.y-15);
+    // Захват экрана (только хост)
+    async function captureScreen() {
+      try {
+        const stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+        const video = document.createElement('video');
+        video.srcObject = stream;
+        video.onloadedmetadata = () => {
+          ctxScreen.drawImage(video, 0, 0, screenCanvas.width, screenCanvas.height);
+          socket.emit('screen-frame', { 
+            roomId, 
+            image: screenCanvas.toDataURL('image/jpeg', 0.8) 
+          });
+          
+          // Отправка кадров каждые 100мс
+          const interval = setInterval(() => {
+            ctxScreen.drawImage(video, 0, 0, screenCanvas.width, screenCanvas.height);
+            socket.emit('screen-frame', { 
+              roomId, 
+              image: screenCanvas.toDataURL('image/jpeg', 0.8) 
+            });
+          }, 100);
+          
+          stream.getTracks().forEach(track => track.onended = () => clearInterval(interval));
+        };
+      } catch(err) {
+        alert('Разрешите захват экрана');
+      }
+    }
+
+    // Управление от зрителей (работает на всех устройствах)
+    function sendControl(type, x, y) {
+      const rect = screenCanvas.getBoundingClientRect();
+      socket.emit('viewer-control', {
+        roomId,
+        type,
+        x: (x / rect.width),
+        y: (y / rect.height)
+      });
+    }
+
+    // События управления
+    screenCanvas.addEventListener('click', (e) => {
+      const rect = screenCanvas.getBoundingClientRect();
+      sendControl('click', e.clientX - rect.left, e.clientY - rect.top);
     });
 
-    // Локальный курсор
     screenCanvas.addEventListener('mousemove', (e) => {
       const rect = screenCanvas.getBoundingClientRect();
       const x = e.clientX - rect.left;
       const y = e.clientY - rect.top;
-      socket.emit('cursor-move', { roomId, x, y });
-    });
-
-    // Клик по экрану
-    screenCanvas.addEventListener('click', (e) => {
-      const rect = screenCanvas.getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      const y = e.clientY - rect.top;
-      socket.emit('remote-input', { roomId, type: 'click', x, y });
       
-      // Локальный эффект
-      ctxScreen.fillStyle = 'rgba(255,255,0,0.5)';
+      // Курсор
+      ctxCursor.clearRect(0, 0, cursorCanvas.width, cursorCanvas.height);
+      ctxCursor.fillStyle = isHost ? '#00ff00' : '#ff0000';
+      ctxCursor.beginPath();
+      ctxCursor.arc(x, y, 8, 0, Math.PI*2);
+      ctxCursor.fill();
+    });
+
+    // Socket события
+    socket.on('viewer-joined', (viewerId) => {
+      viewers++;
+      document.getElementById('viewerCount').textContent = viewers;
+      document.getElementById('status').innerHTML += ` 👁️ ${viewerId.slice(-4)}`;
+    });
+
+    socket.on('screen-frame', (data) => {
+      const img = new Image();
+      img.onload = () => ctxScreen.drawImage(img, 0, 0, screenCanvas.width, screenCanvas.height);
+      img.src = data.image;
+    });
+
+    socket.on('execute-control', (data) => {
+      // Выполнение клика на хосте
+      const x = data.x * screenCanvas.width;
+      const y = data.y * screenCanvas.height;
+      
+      ctxScreen.fillStyle = 'rgba(255,255,0,0.4)';
       ctxScreen.beginPath();
-      ctxScreen.arc(x, y, 20, 0, Math.PI*2);
+      ctxCursor.arc(x, y, 15, 0, Math.PI*2);
       ctxScreen.fill();
-      setTimeout(drawScreen, 200);
     });
 
-    // События сокетов
+    // Подключение
     socket.on('connect', () => {
-      document.getElementById('status').innerHTML = '✅ <strong>ПОДКЛЮЧЕН</strong>';
+      document.getElementById('status').textContent = '✅ Сервер подключен';
+      document.getElementById('joinBtn').disabled = false;
     });
-
-    socket.on('user-joined', (data) => {
-      document.getElementById('users').textContent = data.users;
-      document.getElementById('status').innerHTML = `✅ ${roomId} | ${data.users} чел.`;
-    });
-
-    socket.on('chat-message', (data) => {
-      const chat = document.getElementById('chat');
-      chat.innerHTML += `<div>${data.message}</div>`;
-      chat.scrollTop = chat.scrollHeight;
-    });
-
-    function sendChat() {
-      const msg = document.getElementById('chatInput').value.trim();
-      if (msg) {
-        socket.emit('chat-message', { roomId, message: `💬 ${msg}` });
-        document.getElementById('chatInput').value = '';
-      }
-    }
   </script>
 </body>
 </html>
