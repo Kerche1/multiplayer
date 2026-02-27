@@ -1,144 +1,869 @@
 <!DOCTYPE html>
-<html>
+<html lang="ru">
 <head>
-  <title>ScreenShare</title>
-  <meta name="viewport" content="width=device-width">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ultimate ScreenShare Control Pro</title>
   <script src="/socket.io/socket.io.js" defer></script>
   <style>
-    body { margin: 0; font-family: Arial; background: #111; color: white; }
-    #app { display: flex; height: 100vh; }
-    #screen { flex: 1; position: relative; background: #000; }
-    #sidebar { width: 280px; background: #222; padding: 20px; }
-    canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
-    #cursorCanvas { pointer-events: none; }
-    button { width: 100%; padding: 12px; margin: 8px 0; background: #28a745; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 16px; }
-    button:hover { background: #218838; }
-    button:disabled { background: #555; }
-    input { width: 100%; padding: 12px; margin: 8px 0; box-sizing: border-box; background: #333; border: 1px solid #555; border-radius: 6px; color: white; }
-    #status { padding: 12px; background: #444; border-radius: 6px; text-align: center; font-weight: bold; }
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: linear-gradient(135deg, #0f0f23 0%, #1a1a2e 50%, #16213e 100%);
+      color: white;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    #app {
+      display: flex;
+      height: 100vh;
+      position: relative;
+    }
+
+    #screen-container {
+      flex: 1;
+      position: relative;
+      background: #000;
+      overflow: hidden;
+    }
+
+    #screen-canvas, #cursor-canvas, #overlay-canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      cursor: none;
+    }
+
+    #cursor-canvas {
+      pointer-events: none;
+      z-index: 20;
+    }
+
+    #overlay-canvas {
+      pointer-events: none;
+      z-index: 15;
+    }
+
+    #sidebar {
+      width: 380px;
+      background: rgba(30, 30, 50, 0.95);
+      backdrop-filter: blur(20px);
+      border-left: 1px solid rgba(255, 255, 255, 0.1);
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .section {
+      margin: 20px;
+      padding: 20px;
+      background: rgba(40, 40, 60, 0.7);
+      border-radius: 12px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .section-title {
+      font-size: 16px;
+      font-weight: 600;
+      margin-bottom: 15px;
+      color: #4fc3f7;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .btn {
+      width: 100%;
+      padding: 14px 20px;
+      margin: 8px 0;
+      border: none;
+      border-radius: 8px;
+      font-size: 15px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, #4fc3f7, #29b6f6);
+      color: white;
+    }
+
+    .btn-primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 25px rgba(79, 195, 247, 0.4);
+    }
+
+    .btn-success {
+      background: linear-gradient(135deg, #66bb6a, #4caf50);
+      color: white;
+    }
+
+    .btn-danger {
+      background: linear-gradient(135deg, #ef5350, #f44336);
+      color: white;
+    }
+
+    .btn-secondary {
+      background: rgba(255, 255, 255, 0.1);
+      color: white;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+    }
+
+    .input-group {
+      margin: 12px 0;
+    }
+
+    .input-field {
+      width: 100%;
+      padding: 14px 16px;
+      background: rgba(20, 20, 40, 0.8);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      border-radius: 8px;
+      color: white;
+      font-size: 15px;
+      transition: all 0.3s ease;
+    }
+
+    .input-field:focus {
+      outline: none;
+      border-color: #4fc3f7;
+      box-shadow: 0 0 0 3px rgba(79, 195, 247, 0.1);
+    }
+
+    .slider-container {
+      margin: 15px 0;
+    }
+
+    .slider {
+    width: 100%;
+    height: 6px;
+    border-radius: 3px;
+    background: rgba(255, 255, 255, 0.1);
+    outline: none;
+    appearance: none;           /* ✅ Основной стандарт */
+    -webkit-appearance: none;   /* ✅ WebKit (Chrome/Safari) */
+    -moz-appearance: none;      /* ✅ Firefox */
+    border: none;
+    cursor: pointer;
+}
+
+/* Стилизация ползунка для ВСЕХ браузеров */
+.slider::-webkit-slider-thumb {
+    -webkit-appearance: none;  /* ✅ Только для ползунка */
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #4fc3f7, #29b6f6);
+    cursor: pointer;
+    box-shadow: 0 2px 8px rgba(79, 195, 247, 0.4);
+    transition: transform 0.2s ease;
+}
+
+.slider::-webkit-slider-thumb:hover {
+    transform: scale(1.2);
+}
+
+.slider::-moz-range-thumb {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #4fc3f7, #29b6f6);
+    cursor: pointer;
+    border: none;
+    box-shadow: 0 2px 8px rgba(79, 195, 247, 0.4);
+}
+
+.slider::-ms-thumb {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #4fc3f7, #29b6f6);
+    cursor: pointer;
+    border: none;
+}
+
+
+    .chat-messages {
+      height: 250px;
+      overflow-y: auto;
+      background: rgba(20, 20, 40, 0.5);
+      border-radius: 8px;
+      padding: 15px;
+      margin: 10px 0;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .chat-message {
+      margin: 8px 0;
+      padding: 10px;
+      background: rgba(255, 255, 255, 0.05);
+      border-radius: 6px;
+      border-left: 3px solid;
+      animation: slideIn 0.3s ease;
+    }
+
+    @keyframes slideIn {
+      from { opacity: 0; transform: translateX(-20px); }
+      to { opacity: 1; transform: translateX(0); }
+    }
+
+    .user-list {
+      max-height: 150px;
+      overflow-y: auto;
+    }
+
+    .user-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 12px;
+      margin: 4px 0;
+      background: rgba(255, 255, 255, 0.05);
+      border-radius: 6px;
+      font-size: 14px;
+    }
+
+    .user-color {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      border: 2px solid rgba(255, 255, 255, 0.3);
+    }
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin: 10px 0;
+    }
+
+    .stat-item {
+      text-align: center;
+      padding: 10px;
+      background: rgba(255, 255, 255, 0.05);
+      border-radius: 6px;
+    }
+
+    .control-panel {
+      position: absolute;
+      top: 20px;
+      right: 20px;
+      background: rgba(0, 0, 0, 0.8);
+      padding: 15px;
+      border-radius: 10px;
+      backdrop-filter: blur(10px);
+      z-index: 25;
+      min-width: 200px;
+    }
+
+    .zoom-controls {
+      display: flex;
+      gap: 10px;
+      margin-top: 10px;
+    }
+
+    @media (max-width: 768px) {
+      #sidebar { width: 100%; height: 40%; }
+      #screen-container { height: 60vh; }
+    }
+
+    .loading {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      z-index: 30;
+    }
+
+    .spinner {
+      width: 50px;
+      height: 50px;
+      border: 4px solid rgba(255,255,255,0.1);
+      border-top: 4px solid #4fc3f7;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
   </style>
 </head>
 <body>
   <div id="app">
-    <div id="screen">
-      <canvas id="screenCanvas"></canvas>
-      <canvas id="cursorCanvas"></canvas>
+    <!-- ЭКРАН -->
+    <div id="screen-container">
+      <canvas id="screen-canvas"></canvas>
+      <canvas id="cursor-canvas"></canvas>
+      <canvas id="overlay-canvas"></canvas>
+      
+      <!-- Панель управления -->
+      <div class="control-panel" id="controlPanel">
+        <div style="font-weight: 600; margin-bottom: 10px;">Управление</div>
+        <div class="zoom-controls">
+          <button class="btn btn-secondary" onclick="changeZoom(-0.1)">🔍</button>
+          <span id="zoomLevel">100%</span>
+          <button class="btn btn-secondary" onclick="changeZoom(0.1)">🔎</button>
+        </div>
+        <button class="btn btn-secondary" onclick="toggleCursorLock()" style="margin-top: 10px;">
+          🖱️ Блокировка курсора
+        </button>
+      </div>
+
+      <div class="loading" id="loadingSpinner" style="display: none;">
+        <div class="spinner"></div>
+        <div style="margin-top: 10px; text-align: center;">Загрузка экрана...</div>
+      </div>
     </div>
+
+    <!-- БОКОВАЯ ПАНЕЛЬ -->
     <div id="sidebar">
-      <div id="status">🔌 Подключение...</div>
-      <input id="roomId" value="demo" placeholder="Комната">
-      <button onclick="joinRoom()">🚀 Присоединиться</button>
-      <button onclick="startScreenShare()" id="shareBtn" disabled>📺 Транслировать экран</button>
-      <div id="info">👥 0 пользователей</div>
+      <!-- СТАТУС -->
+      <div class="section">
+        <div class="section-title">📡 Статус</div>
+        <div id="statusBar" class="status-bar">
+          ⏳ Инициализация...
+        </div>
+        <div class="stats-grid">
+          <div class="stat-item">
+            👥 <span id="userCount">0</span>
+          </div>
+          <div class="stat-item">
+            🖥️ <span id="fpsCounter">0</span> FPS
+          </div>
+        </div>
+      </div>
+
+      <!-- ПОДКЛЮЧЕНИЕ -->
+      <div class="section">
+        <div class="section-title">🔗 Подключение</div>
+        <div class="input-group">
+          <input type="text" class="input-field" id="roomId" placeholder="ID комнаты" maxlength="20">
+        </div>
+        <button class="btn btn-primary" onclick="joinRoom()">
+          🚀 Присоединиться
+        </button>
+        <button class="btn btn-success" onclick="startScreenShare()" id="shareButton" disabled>
+          📺 Начать трансляцию
+        </button>
+        <button class="btn btn-danger" onclick="leaveRoom()" id="leaveButton" style="display: none;">
+          🚪 Выйти
+        </button>
+      </div>
+
+      <!-- НАСТРОЙКИ -->
+      <div class="section">
+        <div class="section-title">⚙️ Настройки</div>
+        <div class="slider-container">
+          <label>Качество видео: <span id="qualityValue">60%</span></label>
+          <input type="range" class="slider" id="qualitySlider" min="0.1" max="1.0" step="0.1" value="0.6">
+        </div>
+        <div class="slider-container">
+          <label>FPS: <span id="fpsValue">30</span></label>
+          <input type="range" class="slider" id="fpsSlider" min="10" max="60" value="30">
+        </div>
+        <label style="display: flex; align-items: center; gap: 8px; margin: 10px 0;">
+          <input type="checkbox" id="showCursors" checked> Показывать курсоры
+        </label>
+        <label style="display: flex; align-items: center; gap: 8px; margin: 10px 0;">
+          <input type="checkbox" id="mouseControl" checked> Управление мышью
+        </label>
+      </div>
+
+      <!-- ЧАТ -->
+      <div class="section">
+        <div class="section-title">💬 Чат</div>
+        <div class="chat-messages" id="chatMessages"></div>
+        <div style="display: flex; gap: 10px;">
+          <input type="text" class="input-field" id="chatInput" placeholder="Напишите сообщение..." maxlength="500">
+          <button class="btn btn-secondary" onclick="sendChatMessage()" style="width: auto; padding: 14px 20px;">📤</button>
+        </div>
+      </div>
+
+      <!-- ПОЛЬЗОВАТЕЛИ -->
+      <div class="section">
+        <div class="section-title">👥 Участники</div>
+        <div class="user-list" id="userList"></div>
+      </div>
     </div>
   </div>
 
   <script>
+    // ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ
     const socket = io();
-    const screenCanvas = document.getElementById('screenCanvas');
-    const cursorCanvas = document.getElementById('cursorCanvas');
+    const screenCanvas = document.getElementById('screen-canvas');
+    const cursorCanvas = document.getElementById('cursor-canvas');
+    const overlayCanvas = document.getElementById('overlay-canvas');
+    
     const ctxScreen = screenCanvas.getContext('2d');
     const ctxCursor = cursorCanvas.getContext('2d');
+    const ctxOverlay = overlayCanvas.getContext('2d');
     
-    let roomId = 'demo';
-    let screenStream = null;
-    let isSharing = false;
+    let state = {
+      roomId: '',
+      isHost: false,
+      isConnected: false,
+      screenSharing: false,
+      zoomLevel: 1.0,
+      cursorLocked: false,
+      users: [],
+      quality: 0.6,
+      fps: 30,
+      frameCount: 0,
+      lastFpsTime: 0,
+      screenStream: null,
+      videoElement: null
+    };
 
-    // Размер canvas
-    function resize() {
+    let cursors = new Map();
+    let chatHistory = [];
+    let pendingFrames = 0;
+
+    // ИНИЦИАЛИЗАЦИЯ
+    function init() {
+      resizeCanvases();
+      setupEventListeners();
+      updateStatus('🟢 Клиент готов');
+      requestAnimationFrame(gameLoop);
+    }
+
+    // РЕАЙЗ ХОЛСТОВ
+    function resizeCanvases() {
       const rect = screenCanvas.getBoundingClientRect();
-      screenCanvas.width = rect.width;
-      screenCanvas.height = rect.height;
-      cursorCanvas.width = rect.width;
-      cursorCanvas.height = rect.height;
-    }
-    window.addEventListener('resize', resize);
-    resize();
-
-    // Подключение к комнате
-    function joinRoom() {
-      roomId = document.getElementById('roomId').value;
-      socket.emit('join-room', roomId);
-      document.getElementById('status').textContent = `⏳ ${roomId}...`;
+      [screenCanvas, cursorCanvas, overlayCanvas].forEach(canvas => {
+        canvas.width = rect.width;
+        canvas.height = rect.height;
+      });
     }
 
-    // Трансляция экрана (ПРЯМО ТЕПЕРЬ РАБОТАЕТ)
-    async function startScreenShare() {
-      try {
-        screenStream = await navigator.mediaDevices.getDisplayMedia({ 
-          video: { width: 1920, height: 1080 },
-          audio: true 
-        });
-        
-        const video = document.createElement('video');
-        video.srcObject = screenStream;
-        video.play();
-        
-        isSharing = true;
-        document.getElementById('shareBtn').textContent = '🛑 Стоп';
-        document.getElementById('status').textContent = '📺 ТРАНСЛЯЦИЯ АКТИВНА';
-        
-        // КАЖДЫЙ КАДР → Socket
-        function sendFrame() {
-          ctxScreen.drawImage(video, 0, 0, screenCanvas.width, screenCanvas.height);
-          const imageData = screenCanvas.toDataURL('image/jpeg', 0.7);
-          socket.emit('screen-data', { roomId, imageData });
-          if (isSharing) requestAnimationFrame(sendFrame);
-        }
-        sendFrame();
-        
-      } catch(err) {
-        alert('Разреши захват экрана!');
+    // ОСНОВНОЙ ЦИКЛ
+    function gameLoop(timestamp) {
+      updateFPS(timestamp);
+      updateCursors();
+      renderOverlay();
+      if (state.screenSharing) sendScreenFrame();
+      
+      requestAnimationFrame(gameLoop);
+    }
+
+    // FPS СЧЁТЧИК
+    function updateFPS(timestamp) {
+      state.frameCount++;
+      if (timestamp - state.lastFpsTime >= 1000) {
+        document.getElementById('fpsCounter').textContent = state.frameCount;
+        state.frameCount = 0;
+        state.lastFpsTime = timestamp;
       }
     }
 
-    // КЛИКИ РАБОТАЮТ НА ВСЕХ УСТРОЙСТВАХ
-    screenCanvas.addEventListener('click', (e) => {
+    // ОБНОВЛЕНИЕ КУРСОРОВ
+    function updateCursors() {
+      ctxCursor.clearRect(0, 0, cursorCanvas.width, cursorCanvas.height);
+      
+      if (!document.getElementById('showCursors').checked) return;
+      
+      cursors.forEach(({ x, y, color, userId, size = 12 }, id) => {
+        // Основной курсор
+        ctxCursor.fillStyle = color;
+        ctxCursor.beginPath();
+        ctxCursor.arc(x, y, size, 0, Math.PI * 2);
+        ctxCursor.fill();
+        
+        // Обводка
+        ctxCursor.strokeStyle = 'rgba(255, 255, 255, 0.8)';
+        ctxCursor.lineWidth = 2;
+        ctxCursor.stroke();
+        
+        // Имя пользователя
+        ctxCursor.fillStyle = 'rgba(0, 0, 0, 0.8)';
+        ctxCursor.fillRect(x - 30, y - 25, 60, 20);
+        ctxCursor.fillStyle = 'white';
+        ctxCursor.font = 'bold 11px Arial';
+        ctxCursor.textAlign = 'center';
+        ctxCursor.textBaseline = 'middle';
+        ctxCursor.fillText(userId.slice(-4), x, y - 15);
+      });
+    }
+
+    // РЕНДЕР ОВЕРЛЕЯ
+    function renderOverlay() {
+      ctxOverlay.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+      
+      // Сетка для точности
+      if (state.zoomLevel > 1.2) {
+        ctxOverlay.strokeStyle = 'rgba(0, 255, 255, 0.1)';
+        ctxOverlay.lineWidth = 1;
+        for (let i = 0; i < overlayCanvas.width; i += 50) {
+          ctxOverlay.beginPath();
+          ctxOverlay.moveTo(i, 0);
+          ctxOverlay.lineTo(i, overlayCanvas.height);
+          ctxOverlay.stroke();
+        }
+        for (let i = 0; i < overlayCanvas.height; i += 50) {
+          ctxOverlay.beginPath();
+          ctxOverlay.moveTo(0, i);
+          ctxOverlay.lineTo(overlayCanvas.width, i);
+          ctxOverlay.stroke();
+        }
+      }
+    }
+
+    // ПОДКЛЮЧЕНИЕ К КОМНАТЕ
+    function joinRoom() {
+      state.roomId = document.getElementById('roomId').value.trim();
+      if (!state.roomId) {
+        showError('Введите ID комнаты');
+        return;
+      }
+
+      updateStatus(`🔄 Подключение к ${state.roomId}...`);
+      socket.emit('join-room', { roomId: state.roomId });
+      document.getElementById('leaveButton').style.display = 'block';
+      document.getElementById('shareButton').disabled = false;
+    }
+
+    // НАЧАЛО ТРАНСЛЯЦИИ ЭКРАНА
+    async function startScreenShare() {
+      try {
+        if (state.screenSharing) {
+          // ОСТАНОВКА ТРАНСЛЯЦИИ
+          if (state.screenStream) {
+            state.screenStream.getTracks().forEach(track => track.stop());
+          }
+          state.screenSharing = false;
+          document.getElementById('shareButton').textContent = '📺 Начать трансляцию';
+          document.getElementById('statusBar').innerHTML = '⏹️ Трансляция остановлена';
+          return;
+        }
+
+        // ЗАПУСК ТРАНСЛЯЦИИ
+        state.screenStream = await navigator.mediaDevices.getDisplayMedia({
+          video: { 
+            width: { ideal: 1920 }, 
+            height: { ideal: 1080 },
+            frameRate: { ideal: state.fps }
+          },
+          audio: true
+        });
+
+        state.videoElement = document.createElement('video');
+        state.videoElement.srcObject = state.screenStream;
+        state.videoElement.play();
+
+        state.screenSharing = true;
+        document.getElementById('shareButton').textContent = '⏹️ Остановить трансляцию';
+        updateStatus('📺 ТРАНСЛЯЦИЯ АКТИВНА');
+
+        // ОТПРАВКА КАДРОВ
+        function sendFrame() {
+          if (!state.screenSharing || !state.videoElement) return;
+          
+          ctxScreen.drawImage(state.videoElement, 0, 0, screenCanvas.width, screenCanvas.height);
+          
+          const quality = parseFloat(document.getElementById('qualitySlider').value);
+          const imageData = screenCanvas.toDataURL('image/jpeg', quality);
+          
+          socket.emit('screen-frame', {
+            roomId: state.roomId,
+            imageData,
+            settings: {
+              quality,
+              fps: state.fps,
+              timestamp: Date.now()
+            }
+          });
+          
+          pendingFrames++;
+          requestAnimationFrame(sendFrame);
+        }
+        sendFrame();
+
+      } catch (error) {
+        showError('Ошибка захвата экрана: ' + error.message);
+      }
+    }
+
+    // ОТПРАВКА СООБЩЕНИЯ В ЧАТ
+    function sendChatMessage() {
+      const input = document.getElementById('chatInput');
+      const message = input.value.trim();
+      if (!message || !state.isConnected) return;
+
+      socket.emit('chat-message', {
+        roomId: state.roomId,
+        message: message
+      });
+      input.value = '';
+    }
+
+    // ВЫХОД ИЗ КОМНАТЫ
+    function leaveRoom() {
+      socket.emit('leave-room', { roomId: state.roomId });
+      state.roomId = '';
+      state.isConnected = false;
+      state.screenSharing = false;
+      
+      document.getElementById('statusBar').textContent = '🚪 Вышли из комнаты';
+      document.getElementById('leaveButton').style.display = 'none';
+      document.getElementById('shareButton').disabled = true;
+      document.getElementById('shareButton').textContent = '📺 Начать трансляцию';
+      
+      ctxScreen.clearRect(0, 0, screenCanvas.width, screenCanvas.height);
+      cursors.clear();
+      chatHistory = [];
+    }
+
+    // ИЗМЕНЕНИЕ ЗУМА
+    function changeZoom(delta) {
+      state.zoomLevel = Math.max(0.3, Math.min(3.0, state.zoomLevel + delta));
+      screenCanvas.style.transform = `scale(${state.zoomLevel})`;
+      document.getElementById('zoomLevel').textContent = Math.round(state.zoomLevel * 100) + '%';
+    }
+
+    // БЛОКИРОВКА КУРСОРА
+    function toggleCursorLock() {
+      state.cursorLocked = !state.cursorLocked;
+      document.getElementById('controlPanel').style.display = state.cursorLocked ? 'none' : 'block';
+      
+      if (state.cursorLocked) {
+        document.body.requestPointerLock();
+      } else {
+        document.exitPointerLock();
+      }
+    }
+
+    // ОБРАБОТЧИКИ СОБЫТИЙ
+    function setupEventListeners() {
+      // РЕАЙЗ
+      window.addEventListener('resize', resizeCanvases);
+
+      // КЛИКИ
+      screenCanvas.addEventListener('click', handleMouseClick);
+      screenCanvas.addEventListener('mousedown', handleMouseDown);
+      screenCanvas.addEventListener('mousemove', handleMouseMove);
+
+      // КЛАВИАТУРА
+      document.addEventListener('keydown', handleKeyDown);
+      document.addEventListener('keyup', handleKeyUp);
+
+      // ЧАТ (ENTER)
+      document.getElementById('chatInput').addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') sendChatMessage();
+      });
+
+      // СЛАЙДЕРЫ
+      document.getElementById('qualitySlider').addEventListener('input', (e) => {
+        document.getElementById('qualityValue').textContent = Math.round(e.target.value * 100) + '%';
+        state.quality = parseFloat(e.target.value);
+      });
+
+      document.getElementById('fpsSlider').addEventListener('input', (e) => {
+        document.getElementById('fpsValue').textContent = e.target.value;
+        state.fps = parseInt(e.target.value);
+      });
+
+      // ЧЕКБОКСЫ
+      document.getElementById('showCursors').addEventListener('change', (e) => {
+        socket.emit('room-settings', {
+          roomId: state.roomId,
+          settings: { showCursors: e.target.checked }
+        });
+      });
+    }
+
+    // МОУС ДВИЖЕНИЕ
+    function handleMouseMove(e) {
+      if (!state.isConnected || !state.roomId) return;
+
       const rect = screenCanvas.getBoundingClientRect();
       const x = (e.clientX - rect.left) / rect.width;
       const y = (e.clientY - rect.top) / rect.height;
-      
-      socket.emit('mouse-event', { roomId, type: 'click', x, y });
-      
-      // Локальный эффект
-      ctxScreen.fillStyle = 'rgba(255,255,0,0.6)';
-      ctxScreen.beginPath();
-      ctxScreen.arc(e.clientX - rect.left, e.clientY - rect.top, 20, 0, Math.PI*2);
-      ctxScreen.fill();
+
+      cursors.set('local', {
+        x: e.clientX - rect.left,
+        y: e.clientY - rect.top,
+        color: '#ffffff',
+        userId: 'YOU'
+      });
+
+      socket.emit('mouse-event', {
+        roomId: state.roomId,
+        type: 'mousemove',
+        x, y,
+        button: 'none'
+      });
+    }
+
+    // КЛИК
+    function handleMouseClick(e) {
+      if (!document.getElementById('mouseControl').checked) return;
+
+      const rect = screenCanvas.getBoundingClientRect();
+      const x = (e.clientX - rect.left) / rect.width;
+      const y = (e.clientY - rect.top) / rect.height;
+
+      socket.emit('mouse-event', {
+        roomId: state.roomId,
+        type: 'click',
+        x, y,
+        button: 'left'
+      });
+
+      // ВИЗУАЛЬНЫЙ ЭФФЕКТ
+      ctxOverlay.fillStyle = 'rgba(255, 255, 0, 0.8)';
+      ctxOverlay.beginPath();
+      ctxOverlay.arc(e.clientX - rect.left, e.clientY - rect.top, 25, 0, Math.PI * 2);
+      ctxOverlay.fill();
+    }
+
+    function handleMouseDown(e) {
+      socket.emit('mouse-event', {
+        roomId: state.roomId,
+        type: 'mousedown',
+        x: 0, y: 0,
+        button: e.button === 0 ? 'left' : e.button === 2 ? 'right' : 'middle'
+      });
+    }
+
+    function handleKeyDown(e) {
+      socket.emit('keyboard-event', {
+        roomId: state.roomId,
+        type: 'keydown',
+        key: e.key,
+        code: e.code
+      });
+    }
+
+    function handleKeyUp(e) {
+      socket.emit('keyboard-event', {
+        roomId: state.roomId,
+        type: 'keyup',
+        key: e.key,
+        code: e.code
+      });
+    }
+
+    // SOCKET СОБЫТИЯ
+    socket.on('connect', () => {
+      state.isConnected = true;
+      updateStatus('🟢 ПОДКЛЮЧЕН К СЕРВЕРУ');
     });
 
-    // Socket события
-    socket.on('connect', () => {
-      document.getElementById('status').textContent = '✅ ОНЛАЙН';
-      document.getElementById('shareBtn').disabled = false;
+    socket.on('disconnect', () => {
+      state.isConnected = false;
+      updateStatus('🔴 ОТКЛЮЧЕН ОТ СЕРВЕРА');
+    });
+
+    socket.on('room-joined', (data) => {
+      state.isHost = data.room.hostId === socket.id;
+      updateStatus(`✅ В КОМНАТЕ ${state.roomId} (${data.room.users.size} чел.)`);
+      document.getElementById('userCount').textContent = data.room.users.size;
     });
 
     socket.on('user-joined', (data) => {
-      document.getElementById('info').textContent = `👥 ${data.users} пользователей`;
+      cursors.set(data.userId, {
+        x: Math.random() * screenCanvas.width,
+        y: Math.random() * screenCanvas.height,
+        color: data.color,
+        userId: data.userId.slice(-4)
+      });
+      document.getElementById('userCount').textContent = parseInt(document.getElementById('userCount').textContent) + 1;
     });
 
-    // ПОЛУЧЕНИЕ ЭКРАНА
-    socket.on('screen-data', (data) => {
-      if (data.roomId === roomId) {
-        const img = new Image();
-        img.onload = () => ctxScreen.drawImage(img, 0, 0, screenCanvas.width, screenCanvas.height);
-        img.src = data.imageData;
-      }
+    socket.on('user-left', (data) => {
+      cursors.delete(data.userId);
+      document.getElementById('userCount').textContent = parseInt(document.getElementById('userCount').textContent) - 1;
     });
 
-    // ПОЛУЧЕНИЕ КЛИКОВ
+    socket.on('screen-frame', (data) => {
+      pendingFrames--;
+      document.getElementById('loadingSpinner').style.display = 'none';
+      
+      const img = new Image();
+      img.onload = () => {
+        ctxScreen.drawImage(img, 0, 0, screenCanvas.width, screenCanvas.height);
+      };
+      img.src = data.imageData;
+    });
+
     socket.on('mouse-event', (data) => {
-      if (data.roomId === roomId) {
-        const rect = screenCanvas.getBoundingClientRect();
-        const x = data.x * rect.width;
-        const y = data.y * rect.height;
-        
-        ctxScreen.fillStyle = 'rgba(0,255,0,0.6)';
-        ctxScreen.beginPath();
-        ctxScreen.arc(x, y, 25, 0, Math.PI*2);
-        ctxScreen.fill();
+      if (!data.userId || data.userId === socket.id) return;
+
+      cursors.set(data.userId, {
+        x: data.x * screenCanvas.width,
+        y: data.y * screenCanvas.height,
+        color: data.color,
+        userId: data.userId.slice(-4)
+      });
+
+      // ЭФФЕКТ КЛИКА
+      if (data.type === 'click') {
+        ctxOverlay.fillStyle = `rgba(${parseInt(data.color.slice(1,3),16)},${parseInt(data.color.slice(3,5),16)},${parseInt(data.color.slice(5,7),16)},0.6)`;
+        ctxOverlay.beginPath();
+        ctxOverlay.arc(data.x * screenCanvas.width, data.y * screenCanvas.height, 30, 0, Math.PI * 2);
+        ctxOverlay.fill();
       }
     });
+
+    socket.on('chat-message', (data) => {
+      addChatMessage(data);
+    });
+
+    socket.on('room-settings-updated', (settings) => {
+      document.getElementById('qualitySlider').value = settings.quality || 0.6;
+      document.getElementById('fpsSlider').value = settings.fps || 30;
+      document.getElementById('showCursors').checked = settings.showCursors !== false;
+    });
+
+    socket.on('error', (data) => {
+      showError(data.message);
+    });
+
+    // УТИЛИТЫ
+    function updateStatus(message) {
+      document.getElementById('statusBar').innerHTML = message;
+    }
+
+    function showError(message) {
+      const oldStatus = document.getElementById('statusBar').textContent;
+      document.getElementById('statusBar').innerHTML = `❌ ${message}`;
+      setTimeout(() => {
+        document.getElementById('statusBar').textContent = oldStatus;
+      }, 3000);
+    }
+
+    function addChatMessage(msg) {
+      chatHistory.push(msg);
+      if (chatHistory.length > 50) chatHistory.shift();
+
+      const chat = document.getElementById('chatMessages');
+      const div = document.createElement('div');
+      div.className = 'chat-message';
+      div.style.borderLeftColor = msg.color;
+      div.innerHTML = `
+        <div style="font-weight: 600; color: ${msg.color};">${msg.userId.slice(-4)}</div>
+        <div>${msg.message}</div>
+        <div style="font-size: 11px; opacity: 0.7; margin-top: 5px;">${new Date(msg.timestamp).toLocaleTimeString()}</div>
+      `;
+      chat.appendChild(div);
+      chat.scrollTop = chat.scrollHeight;
+    }
+
+    // ЗАПУСК
+    window.addEventListener('load', init);
   </script>
 </body>
 </html>
