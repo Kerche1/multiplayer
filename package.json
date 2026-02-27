@@ -1,11 +1,12 @@
 {
-  "name": "ultimate-screenshare-control",
-  "version": "2.0.0",
-  "description": "Полноценная система совместного управления экраном",
+  "name": "ultimate-screenshare-control-pro",
+  "version": "3.5.0",
+  "description": "Профессиональная система совместной работы с экраном и управлением",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "nodemon server.js"
+    "dev": "nodemon server.js",
+    "build": "echo 'Build complete'"
   },
   "engines": {
     "node": ">=18.0.0"
@@ -17,7 +18,17 @@
     "helmet": "^7.1.0",
     "express-rate-limit": "^7.2.0",
     "uuid": "^9.0.1",
-    "jimp": "^0.22.12"
+    "bcryptjs": "^2.4.3",
+    "jsonwebtoken": "^9.0.2",
+    "express-session": "^1.18.0",
+    "connect-redis": "^7.1.0",
+    "redis": "^4.6.13",
+    "jimp": "^0.22.12",
+    "cors": "^2.8.5",
+    "multer": "^1.4.5-lts.1",
+    "sharp": "^0.33.0",
+    "node-cron": "^3.0.3",
+    "winston": "^3.13.0"
   },
   "devDependencies": {
     "nodemon": "^3.1.0"
