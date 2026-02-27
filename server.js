@@ -5,14 +5,8 @@ const path = require('path');
 
 const app = express();
 const server = http.createServer(app);
-
-// ✅ Socket.io с поддержкой Render (WebSocket + polling)
-const io = socketIo(server, { 
-  cors: { 
-    origin: "*", 
-    methods: ["GET", "POST"]
-  },
-  transports: ['websocket', 'polling']
+const io = socketIo(server, {
+  cors: { origin: "*", methods: ["GET", "POST"] }
 });
 
 app.use(express.static(path.join(__dirname)));
@@ -21,36 +15,55 @@ app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 const rooms = {};
 
 io.on('connection', (socket) => {
-  console.log('✅', socket.id);
+  console.log('👤 Подключился:', socket.id);
 
-  socket.on('join-room', (data) => {
-    const { roomId } = data;
-    if (!rooms[roomId]) rooms[roomId] = { users: [] };
-    
+  socket.on('register-host', (roomId) => {
+    if (!rooms[roomId]) rooms[roomId] = { host: null, viewers: [] };
+    rooms[roomId].host = socket.id;
     socket.join(roomId);
+    socket.isHost = true;
     socket.roomId = roomId;
-    rooms[roomId].users.push(socket.id);
-    
-    io.to(roomId).emit('user-joined', { 
-      userId: socket.id.slice(-4),
-      color: ['#ff4444', '#44ff44', '#4444ff', '#ff44ff'][rooms[roomId].users.length % 4],
-      users: rooms[roomId].users.length 
-    });
+    console.log(`🖥️ Хост зарегистрирован в комнате ${roomId}`);
   });
 
-  socket.on('cursor-move', (data) => socket.to(data.roomId).emit('remote-cursor', data));
-  socket.on('remote-input', (data) => socket.to(data.roomId).emit('execute-input', data));
-  socket.on('chat-message', (data) => io.to(data.roomId).emit('chat-message', data));
+  socket.on('join-viewer', (roomId) => {
+    if (rooms[roomId] && rooms[roomId].host) {
+      socket.join(roomId);
+      socket.isViewer = true;
+      socket.roomId = roomId;
+      rooms[roomId].viewers.push(socket.id);
+      
+      // Сообщить хосту о новом зрителе
+      io.to(rooms[roomId].host).emit('viewer-joined', socket.id);
+      console.log(`👁️ Зритель ${socket.id.slice(-4)} в комнату ${roomId}`);
+    }
+  });
+
+  // Пересылка команд управления от зрителей к хосту
+  socket.on('viewer-control', (data) => {
+    if (rooms[data.roomId] && rooms[data.roomId].host) {
+      io.to(rooms[data.roomId].host).emit('execute-control', data);
+    }
+  });
+
+  // Пересылка скриншотов от хоста всем зрителям
+  socket.on('screen-frame', (data) => {
+    socket.to(data.roomId).emit('screen-frame', data);
+  });
 
   socket.on('disconnect', () => {
-    if (socket.roomId && rooms[socket.roomId]) {
-      rooms[socket.roomId].users = rooms[socket.roomId].users.filter(id => id !== socket.id);
+    if (socket.isHost && socket.roomId) {
+      delete rooms[socket.roomId];
+      console.log(`🖥️ Хост ${socket.id.slice(-4)} отключился`);
+    } else if (socket.isViewer && socket.roomId) {
+      const room = rooms[socket.roomId];
+      if (room) {
+        room.viewers = room.viewers.filter(id => id !== socket.id);
+      }
     }
   });
 });
 
-// ✅ Render слушает ВСЕ IP и порты
-const PORT = process.env.PORT || 3000;
-server.listen(PORT, '0.0.0.0', () => {
-  console.log(`🚀 Render: https://твоя-приложение.onrender.com`);
+server.listen(process.env.PORT || 3000, '0.0.0.0', () => {
+  console.log('🚀 Сервер: http://localhost:3000');
 });
